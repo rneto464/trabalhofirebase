@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ScrollView, Image, KeyboardAvoidingView, Platform, ActivityIndicator, Modal,
+  ScrollView, Image, KeyboardAvoidingView, Platform, ActivityIndicator, Modal,
 } from 'react-native';
 import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db, storage } from '../services/firebase';
+import { auth, db } from '../services/firebase';
 import colors from '../theme/colors';
 
 const CATEGORIAS = ['Refeições', 'Bolos e Doces', 'Bebidas', 'Marmitas', 'Outros'];
@@ -22,81 +20,38 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
     anuncio?.preco != null ? String(anuncio.preco).replace('.', ',') : ''
   );
   const [categoria, setCategoria] = useState(anuncio?.categoria ?? 'Refeições');
-  const [imagemUri, setImagemUri] = useState(anuncio?.imagemUrl ?? null);
-  const [imagemFile, setImagemFile] = useState(null);
+  const [imagemUrl, setImagemUrl] = useState(anuncio?.imagemUrl ?? '');
   const [loading, setLoading] = useState(false);
-  const [uploadProgresso, setUploadProgresso] = useState(0);
   const [modal, setModal] = useState({ visivel: false, titulo: '', mensagem: '', onOk: null });
 
-  async function pickImage() {
-    if (Platform.OS !== 'web') {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permissão necessária', 'Precisamos de acesso à galeria para adicionar fotos.');
-        return;
-      }
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.4,
-      exif: false,
-    });
-    if (!result.canceled) {
-      setImagemUri(result.assets[0].uri);
-      setImagemFile(result.assets[0].file ?? null);
-    }
-  }
-
-  async function uploadImage(uri) {
-    setUploadProgresso(20);
-    const storageRef = ref(storage, `anuncios/${auth.currentUser.uid}/${Date.now()}`);
-
-    let dadosUpload;
-    if (Platform.OS === 'web' && imagemFile) {
-      dadosUpload = imagemFile;
-    } else {
-      const response = await fetch(uri);
-      dadosUpload = await response.blob();
-    }
-
-    setUploadProgresso(60);
-    const snapshot = await uploadBytes(storageRef, dadosUpload);
-    setUploadProgresso(100);
-    return getDownloadURL(snapshot.ref);
-  }
+  const urlValida = imagemUrl.trim().startsWith('http');
 
   async function handleSubmit() {
     if (!titulo.trim() || !descricao.trim() || !preco.trim()) {
-      Alert.alert('Erro', 'Preencha todos os campos obrigatórios.');
+      setModal({ visivel: true, titulo: 'Erro', mensagem: 'Preencha todos os campos obrigatórios.', onOk: null });
       return;
     }
     const precoNum = parseFloat(preco.replace(',', '.'));
     if (isNaN(precoNum) || precoNum <= 0) {
-      Alert.alert('Erro', 'Informe um preço válido.');
+      setModal({ visivel: true, titulo: 'Erro', mensagem: 'Informe um preço válido.', onOk: null });
       return;
     }
     if (!auth.currentUser) {
-      Alert.alert('Erro', 'Você precisa estar logado para publicar um anúncio.');
+      setModal({ visivel: true, titulo: 'Erro', mensagem: 'Você precisa estar logado para publicar um anúncio.', onOk: null });
       return;
     }
     setLoading(true);
-    setUploadProgresso(0);
     try {
-      let imagemUrl = null;
-      if (imagemUri) {
-        imagemUrl = imagemUri.startsWith('http') ? imagemUri : await uploadImage(imagemUri);
-      }
+      const dados = {
+        titulo: titulo.trim(),
+        descricao: descricao.trim(),
+        preco: precoNum,
+        categoria,
+        imagemUrl: urlValida ? imagemUrl.trim() : null,
+      };
 
       if (editando) {
-        await updateDoc(doc(db, 'anuncios', anuncio.id), {
-          titulo: titulo.trim(),
-          descricao: descricao.trim(),
-          preco: precoNum,
-          categoria,
-          imagemUrl,
-        });
+        await updateDoc(doc(db, 'anuncios', anuncio.id), dados);
         setModal({
           visivel: true,
           titulo: 'Sucesso',
@@ -105,11 +60,7 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
         });
       } else {
         await addDoc(collection(db, 'anuncios'), {
-          titulo: titulo.trim(),
-          descricao: descricao.trim(),
-          preco: precoNum,
-          categoria,
-          imagemUrl,
+          ...dados,
           userId: auth.currentUser.uid,
           userName: auth.currentUser.displayName || 'Usuário',
           createdAt: serverTimestamp(),
@@ -131,18 +82,10 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
       });
     } finally {
       setLoading(false);
-      setUploadProgresso(0);
     }
   }
 
-  const temImagemLocal = imagemUri && !imagemUri.startsWith('http');
-  const labelBotao = loading
-    ? temImagemLocal
-      ? `Enviando foto… ${uploadProgresso}%`
-      : 'Salvando…'
-    : editando
-    ? 'Salvar Alterações'
-    : 'Publicar Anúncio';
+  const labelBotao = loading ? 'Salvando…' : editando ? 'Salvar Alterações' : 'Publicar Anúncio';
 
   return (
     <KeyboardAvoidingView
@@ -151,16 +94,27 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
     >
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.sectionLabel}>Foto do Produto</Text>
-        <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
-          {imagemUri ? (
-            <Image source={{ uri: imagemUri }} style={styles.imagePreview} resizeMode="cover" />
+
+        <View style={styles.imagePreviewBox}>
+          {urlValida ? (
+            <Image source={{ uri: imagemUrl.trim() }} style={styles.imagePreview} resizeMode="cover" />
           ) : (
             <View style={styles.imagePlaceholder}>
-              <Ionicons name="camera-outline" size={36} color={colors.textLight} />
-              <Text style={styles.imagePlaceholderText}>Adicionar foto</Text>
+              <Ionicons name="image-outline" size={36} color={colors.textLight} />
+              <Text style={styles.imagePlaceholderText}>Prévia da imagem</Text>
             </View>
           )}
-        </TouchableOpacity>
+        </View>
+
+        <Text style={styles.label}>URL da imagem</Text>
+        <TextInput
+          style={styles.input}
+          value={imagemUrl}
+          onChangeText={setImagemUrl}
+          placeholder="https://exemplo.com/foto.jpg"
+          autoCapitalize="none"
+          keyboardType="url"
+        />
 
         <Text style={styles.label}>Título *</Text>
         <TextInput
@@ -200,20 +154,12 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
               style={[styles.categoriaChip, categoria === cat && styles.categoriaChipAtiva]}
               onPress={() => setCategoria(cat)}
             >
-              <Text
-                style={[styles.categoriaText, categoria === cat && styles.categoriaTextAtiva]}
-              >
+              <Text style={[styles.categoriaText, categoria === cat && styles.categoriaTextAtiva]}>
                 {cat}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
-
-        {loading && temImagemLocal && (
-          <View style={styles.progressoContainer}>
-            <View style={[styles.progressoBarra, { width: `${uploadProgresso}%` }]} />
-          </View>
-        )}
 
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
@@ -261,10 +207,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 40 },
   sectionLabel: { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 10 },
-  imagePicker: {
+  imagePreviewBox: {
     borderRadius: 12,
     overflow: 'hidden',
-    marginBottom: 20,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: colors.border,
     borderStyle: 'dashed',
@@ -303,18 +249,6 @@ const styles = StyleSheet.create({
   categoriaChipAtiva: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
   categoriaText: { fontSize: 13, color: colors.text },
   categoriaTextAtiva: { color: colors.white, fontWeight: '600' },
-  progressoContainer: {
-    height: 6,
-    backgroundColor: colors.border,
-    borderRadius: 3,
-    marginBottom: 14,
-    overflow: 'hidden',
-  },
-  progressoBarra: {
-    height: '100%',
-    backgroundColor: colors.primaryDark,
-    borderRadius: 3,
-  },
   button: {
     backgroundColor: colors.primaryDark,
     borderRadius: 10,
@@ -324,7 +258,6 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   loadingRow: { flexDirection: 'row', alignItems: 'center' },
   buttonText: { color: colors.white, fontSize: 16, fontWeight: 'bold' },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
