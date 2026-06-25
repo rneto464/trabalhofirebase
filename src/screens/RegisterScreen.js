@@ -4,7 +4,8 @@ import {
   Alert, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth } from '../services/firebase';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../services/firebase';
 import colors from '../theme/colors';
 
 export default function RegisterScreen({ navigation }) {
@@ -26,6 +27,12 @@ export default function RegisterScreen({ navigation }) {
     try {
       const { user } = await createUserWithEmailAndPassword(auth, email.trim(), senha);
       await updateProfile(user, { displayName: nome.trim() });
+      await setDoc(doc(db, 'usuarios', user.uid), {
+        uid: user.uid,
+        nome: nome.trim(),
+        email: email.trim(),
+        createdAt: serverTimestamp(),
+      });
       Alert.alert('Sucesso', 'Conta criada com sucesso!', [
         { text: 'OK', onPress: () => navigation.navigate('Home') },
       ]);
