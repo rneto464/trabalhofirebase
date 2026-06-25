@@ -4,15 +4,80 @@ import {
   Alert, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import { auth } from '../services/firebase';
+import { auth, db } from '../services/firebase';
 import colors from '../theme/colors';
+
+const PRODUTOS_EXEMPLO = [
+  {
+    titulo: 'Marmita Fitness Frango Grelhado',
+    descricao: 'Marmita saudável com frango grelhado, arroz integral, feijão carioca e mix de legumes no vapor. Ideal para quem busca uma alimentação equilibrada sem abrir mão do sabor. Porção de 500g.',
+    preco: 18.90,
+    categoria: 'Marmitas',
+  },
+  {
+    titulo: 'Bolo de Cenoura com Chocolate',
+    descricao: 'Bolo de cenoura fofinho com cobertura generosa de chocolate meio amargo. Feito artesanalmente com ingredientes frescos e sem conservantes. Serve até 10 fatias. Disponível para retirada ou entrega.',
+    preco: 35.00,
+    categoria: 'Bolos e Doces',
+  },
+  {
+    titulo: 'Suco Verde Detox 500ml',
+    descricao: 'Suco natural feito com couve, maçã verde, pepino, gengibre e limão. Sem adição de açúcar, conservantes ou corantes. Gelado e pronto para consumo. Produzido diariamente pela manhã.',
+    preco: 12.00,
+    categoria: 'Bebidas',
+  },
+  {
+    titulo: 'Lasanha de Carne ao Molho Bolonhesa',
+    descricao: 'Lasanha caseira com camadas generosas de carne moída temperada, molho de tomate especial, queijo mussarela e molho branco cremoso. Porção individual de 400g. Vai ao forno por 20 minutos.',
+    preco: 25.50,
+    categoria: 'Refeições',
+  },
+  {
+    titulo: 'Brigadeiro Gourmet — Caixa com 12',
+    descricao: 'Brigadeiros gourmet feitos com chocolate belga 70% cacau, creme de leite fresco e manteiga sem sal. Cobertura com granulado belga importado. Caixa decorada com 12 unidades. Ótimo presente.',
+    preco: 28.00,
+    categoria: 'Bolos e Doces',
+  },
+  {
+    titulo: 'Frango Assado com Farofa',
+    descricao: 'Frango inteiro marinado por 24 horas em temperos especiais: alho, limão, ervas finas, páprica defumada e azeite extra virgem. Assado lentamente para garantir suculência. Acompanha farofa da casa.',
+    preco: 42.00,
+    categoria: 'Refeições',
+  },
+];
 
 export default function ProfileScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
+  const [seedLoading, setSeedLoading] = useState(false);
+
+  async function handleSeed() {
+    if (!auth.currentUser) return;
+    setSeedLoading(true);
+    try {
+      await Promise.all(
+        PRODUTOS_EXEMPLO.map(p =>
+          addDoc(collection(db, 'anuncios'), {
+            ...p,
+            imagemUrl: null,
+            userId: auth.currentUser.uid,
+            userName: auth.currentUser.displayName || 'Usuário',
+            createdAt: serverTimestamp(),
+          })
+        )
+      );
+      Alert.alert('Sucesso', `${PRODUTOS_EXEMPLO.length} produtos de exemplo inseridos!`);
+    } catch (error) {
+      console.error('Erro ao inserir exemplos:', error);
+      Alert.alert('Erro', 'Não foi possível inserir os produtos de exemplo.');
+    } finally {
+      setSeedLoading(false);
+    }
+  }
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, setUser);
@@ -78,6 +143,17 @@ export default function ProfileScreen({ navigation }) {
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.error} />
           <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.seedButton, seedLoading && styles.buttonDisabled]}
+          onPress={handleSeed}
+          disabled={seedLoading}
+        >
+          <Ionicons name="flask-outline" size={16} color={colors.textLight} />
+          <Text style={styles.seedText}>
+            {seedLoading ? 'Inserindo...' : 'Inserir produtos de exemplo'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     );
@@ -191,4 +267,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textDecorationLine: 'underline',
   },
+  seedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    padding: 10,
+    gap: 6,
+  },
+  seedText: { fontSize: 13, color: colors.textLight },
+  buttonDisabled: { opacity: 0.5 },
 });

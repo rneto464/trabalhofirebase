@@ -129,11 +129,18 @@ export default function MeusAnunciosScreen({ navigation }) {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={styles.btnEditar}
+              onPress={() => navigation.navigate('CadastroAnuncio', { anuncio: item })}
+            >
+              <Ionicons name="pencil-outline" size={18} color={colors.primaryDark} />
+              <Text style={styles.btnEditarText}>Editar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={styles.btnExcluir}
               onPress={() => confirmDelete(item.id)}
             >
               <Ionicons name="trash-outline" size={18} color={colors.error} />
-              <Text style={styles.btnExcluirText}>Excluir</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -240,17 +247,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   btnComprarText: { color: colors.white, fontWeight: 'bold', fontSize: 15 },
-  btnExcluir: {
+  btnEditar: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.error,
+    borderColor: colors.primaryDark,
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 14,
     gap: 6,
   },
-  btnExcluirText: { color: colors.error, fontWeight: '600', fontSize: 14 },
+  btnEditarText: { color: colors.primaryDark, fontWeight: '600', fontSize: 14 },
+  btnExcluir: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
 
   emptyText: { fontSize: 16, color: colors.textLight, marginTop: 12, textAlign: 'center' },
   loginButton: {

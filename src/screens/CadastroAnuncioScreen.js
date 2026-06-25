@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Alert, ScrollView, Image, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,12 +12,17 @@ import colors from '../theme/colors';
 
 const CATEGORIAS = ['Refeições', 'Bolos e Doces', 'Bebidas', 'Marmitas', 'Outros'];
 
-export default function CadastroAnuncioScreen({ navigation }) {
-  const [titulo, setTitulo] = useState('');
-  const [descricao, setDescricao] = useState('');
-  const [preco, setPreco] = useState('');
-  const [categoria, setCategoria] = useState('Refeições');
-  const [imagemUri, setImagemUri] = useState(null);
+export default function CadastroAnuncioScreen({ navigation, route }) {
+  const anuncio = route.params?.anuncio ?? null;
+  const editando = anuncio !== null;
+
+  const [titulo, setTitulo] = useState(anuncio?.titulo ?? '');
+  const [descricao, setDescricao] = useState(anuncio?.descricao ?? '');
+  const [preco, setPreco] = useState(
+    anuncio?.preco != null ? String(anuncio.preco).replace('.', ',') : ''
+  );
+  const [categoria, setCategoria] = useState(anuncio?.categoria ?? 'Refeições');
+  const [imagemUri, setImagemUri] = useState(anuncio?.imagemUrl ?? null);
   const [loading, setLoading] = useState(false);
 
   async function pickImage() {
@@ -61,26 +66,41 @@ export default function CadastroAnuncioScreen({ navigation }) {
     }
     setLoading(true);
     try {
+      // Se imagemUri é uma URL remota, não faz upload; se é URI local, faz upload
       let imagemUrl = null;
       if (imagemUri) {
-        imagemUrl = await uploadImage(imagemUri);
+        imagemUrl = imagemUri.startsWith('http') ? imagemUri : await uploadImage(imagemUri);
       }
-      await addDoc(collection(db, 'anuncios'), {
-        titulo: titulo.trim(),
-        descricao: descricao.trim(),
-        preco: precoNum,
-        categoria,
-        imagemUrl,
-        userId: auth.currentUser.uid,
-        userName: auth.currentUser.displayName || 'Usuário',
-        createdAt: serverTimestamp(),
-      });
-      Alert.alert('Sucesso', 'Anúncio publicado com sucesso!', [
-        { text: 'OK', onPress: () => navigation.navigate('Home') },
-      ]);
+
+      if (editando) {
+        await updateDoc(doc(db, 'anuncios', anuncio.id), {
+          titulo: titulo.trim(),
+          descricao: descricao.trim(),
+          preco: precoNum,
+          categoria,
+          imagemUrl,
+        });
+        Alert.alert('Sucesso', 'Anúncio atualizado com sucesso!', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      } else {
+        await addDoc(collection(db, 'anuncios'), {
+          titulo: titulo.trim(),
+          descricao: descricao.trim(),
+          preco: precoNum,
+          categoria,
+          imagemUrl,
+          userId: auth.currentUser.uid,
+          userName: auth.currentUser.displayName || 'Usuário',
+          createdAt: serverTimestamp(),
+        });
+        Alert.alert('Sucesso', 'Anúncio publicado com sucesso!', [
+          { text: 'OK', onPress: () => navigation.navigate('Home') },
+        ]);
+      }
     } catch (error) {
-      console.error('Erro ao publicar:', error);
-      Alert.alert('Erro', 'Não foi possível publicar o anúncio. Tente novamente.');
+      console.error('Erro ao salvar:', error);
+      Alert.alert('Erro', 'Não foi possível salvar o anúncio. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -159,7 +179,9 @@ export default function CadastroAnuncioScreen({ navigation }) {
           {loading ? (
             <ActivityIndicator color={colors.white} />
           ) : (
-            <Text style={styles.buttonText}>Publicar Anúncio</Text>
+            <Text style={styles.buttonText}>
+              {editando ? 'Salvar Alterações' : 'Publicar Anúncio'}
+            </Text>
           )}
         </TouchableOpacity>
       </ScrollView>
