@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  Image, ActivityIndicator, RefreshControl, ScrollView, Alert,
+  Image, ActivityIndicator, RefreshControl, ScrollView, Alert, Modal,
 } from 'react-native';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import {
+  collection, getDocs, query, orderBy, where, setDoc, deleteDoc, doc,
+} from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -30,6 +32,8 @@ export default function HomeScreen({ navigation }) {
   const [categoriaAtiva, setCategoriaAtiva] = useState('Todas');
   const [usuarioFiltro, setUsuarioFiltro] = useState('Todos');
   const [user, setUser] = useState(null);
+  const [favoritos, setFavoritos] = useState(new Set());
+  const [modalCompra, setModalCompra] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, setUser);
@@ -42,13 +46,27 @@ export default function HomeScreen({ navigation }) {
         getDocs(query(collection(db, 'anuncios'), orderBy('createdAt', 'desc'))),
         getDocs(collection(db, 'usuarios')),
       ]);
-      setAnuncios(snapshotAnuncios.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setUsuarios(snapshotUsuarios.docs.map(doc => doc.data()));
+      setAnuncios(snapshotAnuncios.docs.map(d => ({ id: d.id, ...d.data() })));
+      setUsuarios(snapshotUsuarios.docs.map(d => d.data()));
     } catch (error) {
       console.error('Erro ao buscar dados:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        const favSnapshot = await getDocs(
+          query(collection(db, 'favoritos'), where('userId', '==', currentUser.uid))
+        );
+        setFavoritos(new Set(favSnapshot.docs.map(d => d.data().anuncioId)));
+      } catch {
+        setFavoritos(new Set());
+      }
+    } else {
+      setFavoritos(new Set());
     }
   }
 
@@ -59,6 +77,42 @@ export default function HomeScreen({ navigation }) {
     }, [])
   );
 
+  async function toggleFavorito(anuncioId) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      Alert.alert('Login necessário', 'Faça login para salvar favoritos.');
+      return;
+    }
+    const favId = `${currentUser.uid}_${anuncioId}`;
+    const isFav = favoritos.has(anuncioId);
+
+    setFavoritos(prev => {
+      const next = new Set(prev);
+      if (isFav) next.delete(anuncioId);
+      else next.add(anuncioId);
+      return next;
+    });
+
+    try {
+      if (isFav) {
+        await deleteDoc(doc(db, 'favoritos', favId));
+      } else {
+        await setDoc(doc(db, 'favoritos', favId), {
+          userId: currentUser.uid,
+          anuncioId,
+        });
+      }
+    } catch {
+      setFavoritos(prev => {
+        const next = new Set(prev);
+        if (isFav) next.add(anuncioId);
+        else next.delete(anuncioId);
+        return next;
+      });
+      Alert.alert('Erro', 'Não foi possível atualizar favoritos.');
+    }
+  }
+
   const anunciosFiltrados = anuncios.filter(a => {
     const passaCategoria = categoriaAtiva === 'Todas' || a.categoria === categoriaAtiva;
     const passaUsuario = usuarioFiltro === 'Todos' || a.userName === usuarioFiltro;
@@ -66,15 +120,25 @@ export default function HomeScreen({ navigation }) {
   });
 
   function renderCard({ item }) {
+    const isFav = favoritos.has(item.id);
     return (
       <View style={styles.card}>
-        {item.imagemUrl ? (
-          <Image source={{ uri: item.imagemUrl }} style={styles.cardImage} resizeMode="cover" />
-        ) : (
-          <View style={styles.cardImagePlaceholder}>
-            <Ionicons name="fast-food-outline" size={40} color={colors.textLight} />
-          </View>
-        )}
+        <View style={styles.cardImageContainer}>
+          {item.imagemUrl ? (
+            <Image source={{ uri: item.imagemUrl }} style={styles.cardImage} resizeMode="cover" />
+          ) : (
+            <View style={styles.cardImagePlaceholder}>
+              <Ionicons name="fast-food-outline" size={40} color={colors.textLight} />
+            </View>
+          )}
+          <TouchableOpacity style={styles.favButton} onPress={() => toggleFavorito(item.id)}>
+            <Ionicons
+              name={isFav ? 'heart' : 'heart-outline'}
+              size={22}
+              color={isFav ? '#E53935' : colors.white}
+            />
+          </TouchableOpacity>
+        </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardTitulo} numberOfLines={1}>{item.titulo}</Text>
           <Text style={styles.cardDescricao} numberOfLines={3}>{item.descricao}</Text>
@@ -97,7 +161,7 @@ export default function HomeScreen({ navigation }) {
 
           <TouchableOpacity
             style={styles.btnComprar}
-            onPress={() => Alert.alert('Indisponível', 'Tente novamente mais tarde')}
+            onPress={() => setModalCompra(true)}
           >
             <Text style={styles.btnComprarText}>Comprar</Text>
           </TouchableOpacity>
@@ -182,6 +246,24 @@ export default function HomeScreen({ navigation }) {
           <Ionicons name="add" size={28} color={colors.white} />
         </TouchableOpacity>
       )}
+
+      <Modal
+        visible={modalCompra}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalCompra(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Ionicons name="time-outline" size={36} color={colors.primaryDark} style={{ marginBottom: 12 }} />
+            <Text style={styles.modalTitulo}>Indisponível</Text>
+            <Text style={styles.modalMensagem}>Tente novamente mais tarde</Text>
+            <TouchableOpacity style={styles.modalBotao} onPress={() => setModalCompra(false)}>
+              <Text style={styles.modalBotaoText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -239,6 +321,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
   },
+  cardImageContainer: { position: 'relative' },
   cardImage: { width: '100%', height: 160 },
   cardImagePlaceholder: {
     width: '100%',
@@ -246,6 +329,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  favButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 20,
+    padding: 6,
   },
   cardBody: { padding: 14 },
   cardTitulo: { fontSize: 17, fontWeight: 'bold', color: colors.text, marginBottom: 4 },
@@ -294,4 +385,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
   },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBox: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 28,
+    width: '80%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  modalTitulo: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  modalMensagem: {
+    fontSize: 15,
+    color: colors.textLight,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalBotao: {
+    backgroundColor: colors.primaryDark,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 40,
+  },
+  modalBotaoText: { color: colors.white, fontWeight: 'bold', fontSize: 15 },
 });

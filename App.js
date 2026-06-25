@@ -11,6 +11,7 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import CadastroAnuncioScreen from './src/screens/CadastroAnuncioScreen';
 import MeusAnunciosScreen from './src/screens/MeusAnunciosScreen';
+import FavoritosScreen from './src/screens/FavoritosScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -52,6 +53,7 @@ export default function App() {
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="CadastroAnuncio" component={CadastroAnuncioScreen} />
         <Stack.Screen name="MeusAnuncios" component={MeusAnunciosScreen} />
+        <Stack.Screen name="Favoritos" component={FavoritosScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ScrollView, Image, KeyboardAvoidingView, Platform, ActivityIndicator,
+  Alert, ScrollView, Image, KeyboardAvoidingView, Platform, ActivityIndicator, Modal,
 } from 'react-native';
 import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db, storage } from '../services/firebase';
@@ -23,51 +23,48 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
   );
   const [categoria, setCategoria] = useState(anuncio?.categoria ?? 'Refeições');
   const [imagemUri, setImagemUri] = useState(anuncio?.imagemUrl ?? null);
+  const [imagemFile, setImagemFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadProgresso, setUploadProgresso] = useState(0);
+  const [modal, setModal] = useState({ visivel: false, titulo: '', mensagem: '', onOk: null });
 
   async function pickImage() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permissão necessária', 'Precisamos de acesso à galeria para adicionar fotos.');
-      return;
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissão necessária', 'Precisamos de acesso à galeria para adicionar fotos.');
+        return;
+      }
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.4,   // comprime mais para upload mais rápido
+      quality: 0.4,
       exif: false,
     });
     if (!result.canceled) {
       setImagemUri(result.assets[0].uri);
+      setImagemFile(result.assets[0].file ?? null);
     }
   }
 
-  function uploadImage(uri) {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        const storageRef = ref(storage, `anuncios/${auth.currentUser.uid}/${Date.now()}`);
-        const task = uploadBytesResumable(storageRef, blob);
+  async function uploadImage(uri) {
+    setUploadProgresso(20);
+    const storageRef = ref(storage, `anuncios/${auth.currentUser.uid}/${Date.now()}`);
 
-        task.on(
-          'state_changed',
-          snapshot => {
-            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-            setUploadProgresso(pct);
-          },
-          reject,
-          async () => {
-            const url = await getDownloadURL(task.snapshot.ref);
-            resolve(url);
-          }
-        );
-      } catch (err) {
-        reject(err);
-      }
-    });
+    let dadosUpload;
+    if (Platform.OS === 'web' && imagemFile) {
+      dadosUpload = imagemFile;
+    } else {
+      const response = await fetch(uri);
+      dadosUpload = await response.blob();
+    }
+
+    setUploadProgresso(60);
+    const snapshot = await uploadBytes(storageRef, dadosUpload);
+    setUploadProgresso(100);
+    return getDownloadURL(snapshot.ref);
   }
 
   async function handleSubmit() {
@@ -100,9 +97,12 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
           categoria,
           imagemUrl,
         });
-        Alert.alert('Sucesso', 'Anúncio atualizado com sucesso!', [
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]);
+        setModal({
+          visivel: true,
+          titulo: 'Sucesso',
+          mensagem: 'Anúncio atualizado com sucesso!',
+          onOk: () => navigation.goBack(),
+        });
       } else {
         await addDoc(collection(db, 'anuncios'), {
           titulo: titulo.trim(),
@@ -114,13 +114,21 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
           userName: auth.currentUser.displayName || 'Usuário',
           createdAt: serverTimestamp(),
         });
-        Alert.alert('Sucesso', 'Anúncio publicado com sucesso!', [
-          { text: 'OK', onPress: () => navigation.navigate('Home') },
-        ]);
+        setModal({
+          visivel: true,
+          titulo: 'Sucesso',
+          mensagem: 'Anúncio publicado com sucesso!',
+          onOk: () => navigation.navigate('Home'),
+        });
       }
     } catch (error) {
       console.error('Erro ao salvar:', error);
-      Alert.alert('Erro', 'Não foi possível salvar o anúncio. Tente novamente.');
+      setModal({
+        visivel: true,
+        titulo: 'Erro',
+        mensagem: 'Não foi possível salvar o anúncio. Tente novamente.',
+        onOk: null,
+      });
     } finally {
       setLoading(false);
       setUploadProgresso(0);
@@ -222,6 +230,29 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal
+        visible={modal.visivel}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModal(m => ({ ...m, visivel: false }))}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitulo}>{modal.titulo}</Text>
+            <Text style={styles.modalMensagem}>{modal.mensagem}</Text>
+            <TouchableOpacity
+              style={styles.modalBotao}
+              onPress={() => {
+                setModal(m => ({ ...m, visivel: false }));
+                modal.onOk?.();
+              }}
+            >
+              <Text style={styles.modalBotaoText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -293,4 +324,28 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   loadingRow: { flexDirection: 'row', alignItems: 'center' },
   buttonText: { color: colors.white, fontSize: 16, fontWeight: 'bold' },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBox: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 28,
+    width: '80%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  modalTitulo: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 8 },
+  modalMensagem: { fontSize: 15, color: colors.textLight, textAlign: 'center', marginBottom: 24 },
+  modalBotao: {
+    backgroundColor: colors.primaryDark,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 40,
+  },
+  modalBotaoText: { color: colors.white, fontWeight: 'bold', fontSize: 15 },
 });

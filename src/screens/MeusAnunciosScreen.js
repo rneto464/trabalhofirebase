@@ -1,10 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  Image, Alert, ActivityIndicator,
+  Image, Alert, ActivityIndicator, Modal,
 } from 'react-native';
 import {
-  collection, query, where, getDocs, orderBy, deleteDoc, doc,
+  collection, query, where, getDocs, deleteDoc, doc,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -24,6 +24,9 @@ function formatarData(timestamp) {
 export default function MeusAnunciosScreen({ navigation }) {
   const [anuncios, setAnuncios] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [modalCompra, setModalCompra] = useState(false);
+  const [modalExcluir, setModalExcluir] = useState(false);
+  const [idExcluir, setIdExcluir] = useState(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -40,13 +43,12 @@ export default function MeusAnunciosScreen({ navigation }) {
     }
     setLoading(true);
     try {
-      const q = query(
-        collection(db, 'anuncios'),
-        where('userId', '==', user.uid),
-        orderBy('createdAt', 'desc')
-      );
+      const q = query(collection(db, 'anuncios'), where('userId', '==', user.uid));
       const snapshot = await getDocs(q);
-      setAnuncios(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const lista = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+      setAnuncios(lista);
     } catch (error) {
       console.error('Erro ao buscar anúncios:', error);
     } finally {
@@ -55,10 +57,8 @@ export default function MeusAnunciosScreen({ navigation }) {
   }
 
   function confirmDelete(id) {
-    Alert.alert('Excluir Anúncio', 'Tem certeza que deseja excluir este anúncio?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: () => handleDelete(id) },
-    ]);
+    setIdExcluir(id);
+    setModalExcluir(true);
   }
 
   async function handleDelete(id) {
@@ -123,7 +123,7 @@ export default function MeusAnunciosScreen({ navigation }) {
           <View style={styles.acoes}>
             <TouchableOpacity
               style={styles.btnComprar}
-              onPress={() => Alert.alert('Indisponível', 'Tente novamente mais tarde')}
+              onPress={() => setModalCompra(true)}
             >
               <Text style={styles.btnComprarText}>Comprar</Text>
             </TouchableOpacity>
@@ -150,6 +150,52 @@ export default function MeusAnunciosScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <Modal
+        visible={modalCompra}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalCompra(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Ionicons name="time-outline" size={36} color={colors.primaryDark} style={{ marginBottom: 12 }} />
+            <Text style={styles.modalTitulo}>Indisponível</Text>
+            <Text style={styles.modalMensagem}>Tente novamente mais tarde</Text>
+            <TouchableOpacity style={styles.modalBotao} onPress={() => setModalCompra(false)}>
+              <Text style={styles.modalBotaoText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalExcluir}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalExcluir(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitulo}>Excluir Anúncio</Text>
+            <Text style={styles.modalMensagem}>Tem certeza que deseja excluir este anúncio?</Text>
+            <View style={styles.modalBotoes}>
+              <TouchableOpacity
+                style={styles.modalBotaoCancelar}
+                onPress={() => setModalExcluir(false)}
+              >
+                <Text style={styles.modalBotaoCancelarText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalBotaoExcluir}
+                onPress={() => { setModalExcluir(false); handleDelete(idExcluir); }}
+              >
+                <Text style={styles.modalBotaoExcluirText}>Excluir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <FlatList
         data={anuncios}
         keyExtractor={item => item.id}
@@ -269,6 +315,48 @@ const styles = StyleSheet.create({
   },
 
   emptyText: { fontSize: 16, color: colors.textLight, marginTop: 12, textAlign: 'center' },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBox: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 28,
+    width: '80%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  modalTitulo: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 8 },
+  modalMensagem: { fontSize: 15, color: colors.textLight, textAlign: 'center', marginBottom: 24 },
+  modalBotao: {
+    backgroundColor: colors.primaryDark,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 40,
+  },
+  modalBotaoText: { color: colors.white, fontWeight: 'bold', fontSize: 15 },
+  modalBotoes: { flexDirection: 'row', gap: 12 },
+  modalBotaoCancelar: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  modalBotaoCancelarText: { color: colors.text, fontWeight: '600', fontSize: 15 },
+  modalBotaoExcluir: {
+    flex: 1,
+    backgroundColor: colors.error,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  modalBotaoExcluirText: { color: colors.white, fontWeight: 'bold', fontSize: 15 },
   loginButton: {
     backgroundColor: colors.primaryDark,
     borderRadius: 8,
