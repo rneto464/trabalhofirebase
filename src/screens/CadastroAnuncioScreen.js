@@ -4,7 +4,7 @@ import {
   Alert, ScrollView, Image, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { collection, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { auth, db, storage } from '../services/firebase';
@@ -24,6 +24,7 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
   const [categoria, setCategoria] = useState(anuncio?.categoria ?? 'Refeições');
   const [imagemUri, setImagemUri] = useState(anuncio?.imagemUrl ?? null);
   const [loading, setLoading] = useState(false);
+  const [uploadProgresso, setUploadProgresso] = useState(0);
 
   async function pickImage() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -35,19 +36,38 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.7,
+      quality: 0.4,   // comprime mais para upload mais rápido
+      exif: false,
     });
     if (!result.canceled) {
       setImagemUri(result.assets[0].uri);
     }
   }
 
-  async function uploadImage(uri) {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const storageRef = ref(storage, `anuncios/${auth.currentUser.uid}/${Date.now()}`);
-    await uploadBytes(storageRef, blob);
-    return getDownloadURL(storageRef);
+  function uploadImage(uri) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const storageRef = ref(storage, `anuncios/${auth.currentUser.uid}/${Date.now()}`);
+        const task = uploadBytesResumable(storageRef, blob);
+
+        task.on(
+          'state_changed',
+          snapshot => {
+            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+            setUploadProgresso(pct);
+          },
+          reject,
+          async () => {
+            const url = await getDownloadURL(task.snapshot.ref);
+            resolve(url);
+          }
+        );
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 
   async function handleSubmit() {
@@ -65,8 +85,8 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
       return;
     }
     setLoading(true);
+    setUploadProgresso(0);
     try {
-      // Se imagemUri é uma URL remota, não faz upload; se é URI local, faz upload
       let imagemUrl = null;
       if (imagemUri) {
         imagemUrl = imagemUri.startsWith('http') ? imagemUri : await uploadImage(imagemUri);
@@ -103,8 +123,18 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
       Alert.alert('Erro', 'Não foi possível salvar o anúncio. Tente novamente.');
     } finally {
       setLoading(false);
+      setUploadProgresso(0);
     }
   }
+
+  const temImagemLocal = imagemUri && !imagemUri.startsWith('http');
+  const labelBotao = loading
+    ? temImagemLocal
+      ? `Enviando foto… ${uploadProgresso}%`
+      : 'Salvando…'
+    : editando
+    ? 'Salvar Alterações'
+    : 'Publicar Anúncio';
 
   return (
     <KeyboardAvoidingView
@@ -171,17 +201,24 @@ export default function CadastroAnuncioScreen({ navigation, route }) {
           ))}
         </View>
 
+        {loading && temImagemLocal && (
+          <View style={styles.progressoContainer}>
+            <View style={[styles.progressoBarra, { width: `${uploadProgresso}%` }]} />
+          </View>
+        )}
+
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
           onPress={handleSubmit}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color={colors.white} />
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color={colors.white} size="small" />
+              <Text style={[styles.buttonText, { marginLeft: 8 }]}>{labelBotao}</Text>
+            </View>
           ) : (
-            <Text style={styles.buttonText}>
-              {editando ? 'Salvar Alterações' : 'Publicar Anúncio'}
-            </Text>
+            <Text style={styles.buttonText}>{labelBotao}</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -235,6 +272,18 @@ const styles = StyleSheet.create({
   categoriaChipAtiva: { backgroundColor: colors.primaryDark, borderColor: colors.primaryDark },
   categoriaText: { fontSize: 13, color: colors.text },
   categoriaTextAtiva: { color: colors.white, fontWeight: '600' },
+  progressoContainer: {
+    height: 6,
+    backgroundColor: colors.border,
+    borderRadius: 3,
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+  progressoBarra: {
+    height: '100%',
+    backgroundColor: colors.primaryDark,
+    borderRadius: 3,
+  },
   button: {
     backgroundColor: colors.primaryDark,
     borderRadius: 10,
@@ -242,5 +291,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonDisabled: { opacity: 0.6 },
+  loadingRow: { flexDirection: 'row', alignItems: 'center' },
   buttonText: { color: colors.white, fontSize: 16, fontWeight: 'bold' },
 });
