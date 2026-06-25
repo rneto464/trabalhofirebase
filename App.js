@@ -19,7 +19,7 @@ function Logo() {
   return (
     <View style={styles.logo}>
       <Ionicons name="fast-food" size={22} color={colors.primaryDark} />
-      <Text style={styles.logoText}>SaborStore</Text>
+      <Text style={styles.logoText}>Lanchonete da Mari</Text>
     </View>
   );
 }
