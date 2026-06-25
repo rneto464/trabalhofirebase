@@ -59,25 +59,25 @@ export default function ProfileScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => navigation.navigate('MeusAnuncios')}
+          onPress={() => navigation.navigate('CadastroAnuncio')}
         >
-          <Ionicons name="list" size={22} color={colors.primaryDark} />
-          <Text style={styles.menuText}>Meus Anúncios</Text>
+          <Ionicons name="add-circle-outline" size={22} color={colors.primaryDark} />
+          <Text style={styles.menuText}>Anunciar novo item</Text>
           <Ionicons name="chevron-forward" size={20} color={colors.textLight} />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.menuItem}
-          onPress={() => navigation.navigate('CadastroAnuncio')}
+          onPress={() => navigation.navigate('MeusAnuncios')}
         >
-          <Ionicons name="add-circle-outline" size={22} color={colors.primaryDark} />
-          <Text style={styles.menuText}>Publicar Anúncio</Text>
+          <Ionicons name="list" size={22} color={colors.primaryDark} />
+          <Text style={styles.menuText}>Ver meus anúncios</Text>
           <Ionicons name="chevron-forward" size={20} color={colors.textLight} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.error} />
-          <Text style={styles.logoutText}>Sair da Conta</Text>
+          <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
       </ScrollView>
     );
