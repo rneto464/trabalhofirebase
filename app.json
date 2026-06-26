@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Lanchonete da Mari",
+    "slug": "lanchonete-da-mari",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#FFF5F8"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.lanchonetedamari.app"
+    }
+  }
+}
