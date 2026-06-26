@@ -1,12 +1,15 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, RefreshControl, ScrollView,
+  Image, ActivityIndicator, RefreshControl, ScrollView, Alert,
 } from 'react-native';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import {
+  collection, getDocs, query, orderBy, where, setDoc, deleteDoc, doc,
+} from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { db } from '../services/firebase';
+import { db, auth } from '../services/firebase';
 import colors from '../theme/colors';
 
 const CATEGORIAS = ['Todas', 'Refeições', 'Bolos e Doces', 'Bebidas', 'Marmitas', 'Outros'];
@@ -21,39 +24,92 @@ function formatarData(timestamp) {
   );
 }
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }) {
   const [anuncios, setAnuncios] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [categoriaAtiva, setCategoriaAtiva] = useState('Todas');
   const [usuarioFiltro, setUsuarioFiltro] = useState('Todos');
+  const [user, setUser] = useState(null);
+  const [favoritos, setFavoritos] = useState(new Set());
 
-  async function buscarDados() {
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return unsubscribe;
+  }, []);
+
+  async function fetchDados() {
     try {
-      const snapAnuncios = await getDocs(
-        query(collection(db, 'anuncios'), orderBy('createdAt', 'desc'))
-      );
-      const snapUsuarios = await getDocs(collection(db, 'usuarios'));
-      setAnuncios(snapAnuncios.docs.map(d => ({ id: d.id, ...d.data() })));
-      setUsuarios(snapUsuarios.docs.map(d => d.data()));
+      const [snapshotAnuncios, snapshotUsuarios] = await Promise.all([
+        getDocs(query(collection(db, 'anuncios'), orderBy('createdAt', 'desc'))),
+        getDocs(collection(db, 'usuarios')),
+      ]);
+      setAnuncios(snapshotAnuncios.docs.map(d => ({ id: d.id, ...d.data() })));
+      setUsuarios(snapshotUsuarios.docs.map(d => d.data()));
     } catch (error) {
       console.error('Erro ao buscar dados:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        const favSnapshot = await getDocs(
+          query(collection(db, 'favoritos'), where('userId', '==', currentUser.uid))
+        );
+        setFavoritos(new Set(favSnapshot.docs.map(d => d.data().anuncioId)));
+      } catch {
+        setFavoritos(new Set());
+      }
+    } else {
+      setFavoritos(new Set());
+    }
   }
 
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      buscarDados();
+      fetchDados();
     }, [])
   );
 
-  function comprar() {
-    window.alert('Tente novamente mais tarde');
+  async function toggleFavorito(anuncioId) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      Alert.alert('Login necessário', 'Faça login para salvar favoritos.');
+      return;
+    }
+    const favId = `${currentUser.uid}_${anuncioId}`;
+    const isFav = favoritos.has(anuncioId);
+
+    setFavoritos(prev => {
+      const next = new Set(prev);
+      if (isFav) next.delete(anuncioId);
+      else next.add(anuncioId);
+      return next;
+    });
+
+    try {
+      if (isFav) {
+        await deleteDoc(doc(db, 'favoritos', favId));
+      } else {
+        await setDoc(doc(db, 'favoritos', favId), {
+          userId: currentUser.uid,
+          anuncioId,
+        });
+      }
+    } catch {
+      setFavoritos(prev => {
+        const next = new Set(prev);
+        if (isFav) next.add(anuncioId);
+        else next.delete(anuncioId);
+        return next;
+      });
+      Alert.alert('Erro', 'Não foi possível atualizar favoritos.');
+    }
   }
 
   const anunciosFiltrados = anuncios.filter(a => {
@@ -63,8 +119,25 @@ export default function HomeScreen() {
   });
 
   function renderCard({ item }) {
+    const isFav = favoritos.has(item.id);
     return (
       <View style={styles.card}>
+        <View style={styles.cardImageContainer}>
+          {item.imagemUrl ? (
+            <Image source={{ uri: item.imagemUrl }} style={styles.cardImage} resizeMode="cover" />
+          ) : (
+            <View style={styles.cardImagePlaceholder}>
+              <Ionicons name="fast-food-outline" size={40} color={colors.textLight} />
+            </View>
+          )}
+          <TouchableOpacity style={styles.favButton} onPress={() => toggleFavorito(item.id)}>
+            <Ionicons
+              name={isFav ? 'heart' : 'heart-outline'}
+              size={22}
+              color={isFav ? '#E53935' : colors.white}
+            />
+          </TouchableOpacity>
+        </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardTitulo} numberOfLines={1}>{item.titulo}</Text>
           <Text style={styles.cardDescricao} numberOfLines={3}>{item.descricao}</Text>
@@ -85,7 +158,10 @@ export default function HomeScreen() {
             <Text style={styles.cardCategoria}>{item.categoria}</Text>
           </View>
 
-          <TouchableOpacity style={styles.btnComprar} onPress={comprar}>
+          <TouchableOpacity
+            style={styles.btnComprar}
+            onPress={() => window.alert('Tente novamente mais tarde')}
+          >
             <Text style={styles.btnComprarText}>Comprar</Text>
           </TouchableOpacity>
         </View>
@@ -147,7 +223,7 @@ export default function HomeScreen() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); buscarDados(); }}
+              onRefresh={() => { setRefreshing(true); fetchDados(); }}
               colors={[colors.primaryDark]}
             />
           }
@@ -159,6 +235,15 @@ export default function HomeScreen() {
             </View>
           }
         />
+      )}
+
+      {user && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => navigation.navigate('CadastroAnuncio')}
+        >
+          <Ionicons name="add" size={28} color={colors.white} />
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -217,6 +302,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
   },
+  cardImageContainer: { position: 'relative' },
+  cardImage: { width: '100%', height: 160 },
+  cardImagePlaceholder: {
+    width: '100%',
+    height: 120,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  favButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderRadius: 20,
+    padding: 6,
+  },
   cardBody: { padding: 14 },
   cardTitulo: { fontSize: 17, fontWeight: 'bold', color: colors.text, marginBottom: 4 },
   cardDescricao: { fontSize: 14, color: colors.textLight, marginBottom: 10, lineHeight: 20 },
@@ -248,4 +350,21 @@ const styles = StyleSheet.create({
 
   empty: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   emptyText: { fontSize: 16, color: colors.textLight, marginTop: 16 },
+
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primaryDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+  },
 });

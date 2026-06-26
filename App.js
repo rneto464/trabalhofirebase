@@ -11,9 +11,11 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import CadastroAnuncioScreen from './src/screens/CadastroAnuncioScreen';
 import MeusAnunciosScreen from './src/screens/MeusAnunciosScreen';
+import FavoritosScreen from './src/screens/FavoritosScreen';
 
 const Stack = createNativeStackNavigator();
 
+// logomarca do aplicativo (fica ao centro do cabecalho)
 function Logo() {
   return (
     <View style={styles.logo}>
@@ -34,6 +36,7 @@ export default function App() {
           headerStyle: { backgroundColor: colors.primary },
           headerTintColor: colors.text,
           headerShadowVisible: false,
+          // icone a direita que leva para o perfil do usuario
           headerRight: () => (
             <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
               <Ionicons
@@ -50,6 +53,7 @@ export default function App() {
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="CadastroAnuncio" component={CadastroAnuncioScreen} />
         <Stack.Screen name="MeusAnuncios" component={MeusAnunciosScreen} />
+        <Stack.Screen name="Favoritos" component={FavoritosScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

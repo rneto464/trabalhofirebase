@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, KeyboardAvoidingView, Platform, ScrollView,
+  Alert, KeyboardAvoidingView, Platform, ScrollView, Modal,
 } from 'react-native';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -54,24 +54,23 @@ export default function ProfileScreen({ navigation }) {
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
   const [seedLoading, setSeedLoading] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return unsubscribe;
-  }, []);
+  const [modalLogout, setModalLogout] = useState(false);
 
   async function handleSeed() {
     if (!auth.currentUser) return;
     setSeedLoading(true);
     try {
-      for (const p of PRODUTOS_EXEMPLO) {
-        await addDoc(collection(db, 'anuncios'), {
-          ...p,
-          userId: auth.currentUser.uid,
-          userName: auth.currentUser.displayName || 'Usuário',
-          createdAt: serverTimestamp(),
-        });
-      }
+      await Promise.all(
+        PRODUTOS_EXEMPLO.map(p =>
+          addDoc(collection(db, 'anuncios'), {
+            ...p,
+            imagemUrl: null,
+            userId: auth.currentUser.uid,
+            userName: auth.currentUser.displayName || 'Usuário',
+            createdAt: serverTimestamp(),
+          })
+        )
+      );
       Alert.alert('Sucesso', `${PRODUTOS_EXEMPLO.length} produtos de exemplo inseridos!`);
     } catch (error) {
       console.error('Erro ao inserir exemplos:', error);
@@ -80,6 +79,11 @@ export default function ProfileScreen({ navigation }) {
       setSeedLoading(false);
     }
   }
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return unsubscribe;
+  }, []);
 
   async function handleLogin() {
     if (!email.trim() || !senha.trim()) {
@@ -103,6 +107,7 @@ export default function ProfileScreen({ navigation }) {
 
   if (user) {
     return (
+      <>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.avatarContainer}>
           <Ionicons name="person-circle" size={80} color={colors.primaryDark} />
@@ -128,7 +133,16 @@ export default function ProfileScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color={colors.textLight} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <TouchableOpacity
+          style={styles.menuItem}
+          onPress={() => navigation.navigate('Favoritos')}
+        >
+          <Ionicons name="heart-outline" size={22} color={colors.primaryDark} />
+          <Text style={styles.menuText}>Meus favoritos</Text>
+          <Ionicons name="chevron-forward" size={20} color={colors.textLight} />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.logoutButton} onPress={() => setModalLogout(true)}>
           <Ionicons name="log-out-outline" size={20} color={colors.error} />
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
@@ -144,6 +158,35 @@ export default function ProfileScreen({ navigation }) {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal
+        visible={modalLogout}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalLogout(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitulo}>Sair da conta</Text>
+            <Text style={styles.modalMensagem}>Deseja sair da sua conta?</Text>
+            <View style={styles.modalBotoes}>
+              <TouchableOpacity
+                style={styles.modalBotaoCancelar}
+                onPress={() => setModalLogout(false)}
+              >
+                <Text style={styles.modalBotaoCancelarText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalBotaoSair}
+                onPress={() => { setModalLogout(false); handleLogout(); }}
+              >
+                <Text style={styles.modalBotaoSairText}>Sair</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      </>
     );
   }
 
@@ -264,4 +307,40 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   seedText: { fontSize: 13, color: colors.textLight },
+  buttonDisabled: { opacity: 0.5 },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBox: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 28,
+    width: '80%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  modalTitulo: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 8 },
+  modalMensagem: { fontSize: 15, color: colors.textLight, textAlign: 'center', marginBottom: 24 },
+  modalBotoes: { flexDirection: 'row', gap: 12 },
+  modalBotaoCancelar: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  modalBotaoCancelarText: { color: colors.text, fontWeight: '600', fontSize: 15 },
+  modalBotaoSair: {
+    flex: 1,
+    backgroundColor: colors.error,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  modalBotaoSairText: { color: colors.white, fontWeight: 'bold', fontSize: 15 },
 });

@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Lanchonete da Mari",
-    "slug": "lanchonete-da-mari",
+    "name": "SaborStore",
+    "slug": "saborstore",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.lanchonetedamari.app"
+      "package": "com.saborstore.app"
     }
   }
 }

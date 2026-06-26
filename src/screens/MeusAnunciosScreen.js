@@ -1,9 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator,
+  Image, Alert, ActivityIndicator, Modal,
 } from 'react-native';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import {
+  collection, query, where, getDocs, deleteDoc, doc,
+} from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { auth, db } from '../services/firebase';
@@ -22,14 +24,17 @@ function formatarData(timestamp) {
 export default function MeusAnunciosScreen({ navigation }) {
   const [anuncios, setAnuncios] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [modalCompra, setModalCompra] = useState(false);
+  const [modalExcluir, setModalExcluir] = useState(false);
+  const [idExcluir, setIdExcluir] = useState(null);
 
   useFocusEffect(
     useCallback(() => {
-      buscarMeusAnuncios();
+      fetchMeusAnuncios();
     }, [])
   );
 
-  async function buscarMeusAnuncios() {
+  async function fetchMeusAnuncios() {
     const user = auth.currentUser;
     if (!user) {
       setAnuncios([]);
@@ -51,8 +56,18 @@ export default function MeusAnunciosScreen({ navigation }) {
     }
   }
 
-  function comprar() {
-    Alert.alert('Tente novamente mais tarde');
+  function confirmDelete(id) {
+    setIdExcluir(id);
+    setModalExcluir(true);
+  }
+
+  async function handleDelete(id) {
+    try {
+      await deleteDoc(doc(db, 'anuncios', id));
+      setAnuncios(prev => prev.filter(a => a.id !== id));
+    } catch {
+      Alert.alert('Erro', 'Não foi possível excluir o anúncio.');
+    }
   }
 
   if (!auth.currentUser) {
@@ -78,6 +93,13 @@ export default function MeusAnunciosScreen({ navigation }) {
   function renderCard({ item }) {
     return (
       <View style={styles.card}>
+        {item.imagemUrl ? (
+          <Image source={{ uri: item.imagemUrl }} style={styles.cardImage} resizeMode="cover" />
+        ) : (
+          <View style={styles.cardImagePlaceholder}>
+            <Ionicons name="fast-food-outline" size={40} color={colors.textLight} />
+          </View>
+        )}
         <View style={styles.cardBody}>
           <Text style={styles.cardTitulo} numberOfLines={1}>{item.titulo}</Text>
           <Text style={styles.cardDescricao} numberOfLines={3}>{item.descricao}</Text>
@@ -98,9 +120,29 @@ export default function MeusAnunciosScreen({ navigation }) {
             <Text style={styles.cardCategoria}>{item.categoria}</Text>
           </View>
 
-          <TouchableOpacity style={styles.btnComprar} onPress={comprar}>
-            <Text style={styles.btnComprarText}>Comprar</Text>
-          </TouchableOpacity>
+          <View style={styles.acoes}>
+            <TouchableOpacity
+              style={styles.btnComprar}
+              onPress={() => setModalCompra(true)}
+            >
+              <Text style={styles.btnComprarText}>Comprar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.btnEditar}
+              onPress={() => navigation.navigate('CadastroAnuncio', { anuncio: item })}
+            >
+              <Ionicons name="pencil-outline" size={18} color={colors.primaryDark} />
+              <Text style={styles.btnEditarText}>Editar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.btnExcluir}
+              onPress={() => confirmDelete(item.id)}
+            >
+              <Ionicons name="trash-outline" size={18} color={colors.error} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -108,13 +150,68 @@ export default function MeusAnunciosScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <Modal
+        visible={modalCompra}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalCompra(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Ionicons name="time-outline" size={36} color={colors.primaryDark} style={{ marginBottom: 12 }} />
+            <Text style={styles.modalTitulo}>Indisponível</Text>
+            <Text style={styles.modalMensagem}>Tente novamente mais tarde</Text>
+            <TouchableOpacity style={styles.modalBotao} onPress={() => setModalCompra(false)}>
+              <Text style={styles.modalBotaoText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalExcluir}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalExcluir(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitulo}>Excluir Anúncio</Text>
+            <Text style={styles.modalMensagem}>Tem certeza que deseja excluir este anúncio?</Text>
+            <View style={styles.modalBotoes}>
+              <TouchableOpacity
+                style={styles.modalBotaoCancelar}
+                onPress={() => setModalExcluir(false)}
+              >
+                <Text style={styles.modalBotaoCancelarText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalBotaoExcluir}
+                onPress={() => { setModalExcluir(false); handleDelete(idExcluir); }}
+              >
+                <Text style={styles.modalBotaoExcluirText}>Excluir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <FlatList
         data={anuncios}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         renderItem={renderCard}
         ListHeaderComponent={
-          <Text style={styles.headerTitle}>Meus Anúncios</Text>
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Meus Anúncios</Text>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => navigation.navigate('CadastroAnuncio')}
+            >
+              <Ionicons name="add" size={20} color={colors.white} />
+              <Text style={styles.addButtonText}>Novo</Text>
+            </TouchableOpacity>
+          </View>
         }
         ListEmptyComponent={
           <View style={styles.centered}>
@@ -131,7 +228,22 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   listContent: { padding: 12 },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text, marginBottom: 16 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: colors.text },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryDark,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  addButtonText: { color: colors.white, fontWeight: '600', marginLeft: 4 },
 
   card: {
     backgroundColor: colors.white,
@@ -143,6 +255,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
+  },
+  cardImage: { width: '100%', height: 160 },
+  cardImagePlaceholder: {
+    width: '100%',
+    height: 120,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardBody: { padding: 14 },
   cardTitulo: { fontSize: 17, fontWeight: 'bold', color: colors.text, marginBottom: 4 },
@@ -164,15 +284,79 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
   },
+  acoes: { flexDirection: 'row', gap: 10 },
   btnComprar: {
+    flex: 1,
     backgroundColor: colors.primaryDark,
     borderRadius: 8,
     paddingVertical: 10,
     alignItems: 'center',
   },
   btnComprarText: { color: colors.white, fontWeight: 'bold', fontSize: 15 },
+  btnEditar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.primaryDark,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 6,
+  },
+  btnEditarText: { color: colors.primaryDark, fontWeight: '600', fontSize: 14 },
+  btnExcluir: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.error,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
 
   emptyText: { fontSize: 16, color: colors.textLight, marginTop: 12, textAlign: 'center' },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBox: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 28,
+    width: '80%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  modalTitulo: { fontSize: 18, fontWeight: 'bold', color: colors.text, marginBottom: 8 },
+  modalMensagem: { fontSize: 15, color: colors.textLight, textAlign: 'center', marginBottom: 24 },
+  modalBotao: {
+    backgroundColor: colors.primaryDark,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 40,
+  },
+  modalBotaoText: { color: colors.white, fontWeight: 'bold', fontSize: 15 },
+  modalBotoes: { flexDirection: 'row', gap: 12 },
+  modalBotaoCancelar: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  modalBotaoCancelarText: { color: colors.text, fontWeight: '600', fontSize: 15 },
+  modalBotaoExcluir: {
+    flex: 1,
+    backgroundColor: colors.error,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  modalBotaoExcluirText: { color: colors.white, fontWeight: 'bold', fontSize: 15 },
   loginButton: {
     backgroundColor: colors.primaryDark,
     borderRadius: 8,
